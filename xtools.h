@@ -35,6 +35,10 @@ typedef enum {
 
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include <float.h>
+#include <errno.h>
 
 const char * xt_status_str(xt_status_t status);
 
@@ -72,7 +76,7 @@ char * xt_fget_line(FILE * fp, xt_status_t * status);
         exit(EXIT_FAILURE); \
     } while (0)
 
-#define END_IF_STATUS_ERROR \
+#define END_IF_STATUS_NOT_OK \
     do { \
         if (status && *status != XT_OK) return 0; \
     } while (0)
@@ -94,11 +98,6 @@ const char * xt_status_str(xt_status_t status) {
 // ---------------------
 // PARSING FUNCTIONALITY
 // ---------------------
-
-#include <stdlib.h>
-#include <float.h>
-#include <errno.h>
-#include <ctype.h>
 
 #define parse_signed(str, endptr)   strtoll(str, endptr, 10)
 #define parse_unsigned(str, endptr) strtoull(str, endptr, 10)
@@ -156,11 +155,6 @@ TYPES_LIST
 // SCANNING FUNCTIONALITY
 // ----------------------
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <ctype.h>
-#include <stdbool.h>
-
 void xt_clear_input(bool newline_found) {
     if (newline_found) {return;}
     int c;
@@ -173,52 +167,41 @@ bool xt_fget_token(FILE * fp, char * str, const size_t len, xt_status_t * status
     if (fp  == NULL)   {FAIL("fp can not be NULL!");}
     if (str == NULL)   {FAIL("str can not be NULL!");}
     if (len == 0)      {FAIL("len can not be 0!");}
-    END_IF_STATUS_ERROR;
+    END_IF_STATUS_NOT_OK;
 
-    xt_status_t code = XT_OK;
     bool newline_found = false;
 
     size_t tkn_len = 0;
-    bool in_tkn = false;
-    bool got_token = false;
     while (1) {
         const int c = fgetc(fp);
         if (c == EOF) {
-            if (!got_token) {
-                code = XT_EOF;
-                goto END;
-            }
+            if (tkn_len == 0) {goto EOF_NO_CHAR;}
             break;
         }
         if (c == '\n') {
             newline_found = true;
             break;
         }
-
         if (isspace(c)) {
-            if (!in_tkn) {continue;}
+            if (tkn_len == 0) {continue;}
             break;
         }
-        got_token = true;
 
-        in_tkn = true;
-
-        if (tkn_len < len - 1) {
+        if (tkn_len < len - 1 || (tkn_len < len && len == 1)) {
         	str[tkn_len++] = (char) c;
         }
         else {
-        	code = XT_OUT_OF_RANGE;
+            SET_STATUS(status, XT_OUT_OF_RANGE);
         }
     }
 
-    // Do not null terminate when user requested single char
+    // If not single char
     if (len != 1) {str[tkn_len] = '\0';}
-
-    END:
-    if (status && *status == XT_OK) {
-        *status = code;
-    }
     return newline_found;
+
+    EOF_NO_CHAR:
+    SET_STATUS(status, XT_EOF);
+    return false;
 }
 
 bool xt_get_token(char * str, const size_t len, xt_status_t * status) {
@@ -227,7 +210,7 @@ bool xt_get_token(char * str, const size_t len, xt_status_t * status) {
 
 #define X(name, variant, type, min, max) \
     type xt_fscan_##name (FILE * fp, bool * newline_found, xt_status_t * status) { \
-        END_IF_STATUS_ERROR; \
+        END_IF_STATUS_NOT_OK; \
 \
         xt_status_t err = XT_OK; \
         type out = 0; \
@@ -302,7 +285,7 @@ char * xt_fget_line(FILE * fp, xt_status_t * status) {
 // ----------------
 
 #undef FAIL
-#undef END_IF_STATUS_ERROR
+#undef END_IF_STATUS_NOT_OK
 
 #undef parse_signed
 #undef parse_unsigned
