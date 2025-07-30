@@ -8,7 +8,7 @@ int main() {
 		char token[4] = {0};
 		xt_get_token(token, sizeof(token), &status);
 		
-		if (status != XT_ERR_OUT_OF_RANGE) {printf(">%s<\n", token);}
+		if (status == XT_OK) {printf(">%s<\n", token);}
 		if (status == XT_EOF) {break;}
 	}
 	return 0;

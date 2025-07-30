@@ -4,10 +4,11 @@
 #include <stdint.h>
 
 #define STATUS_CODES \
-    X(XT_OK,               "OK") \
-    X(XT_EOF,              "End of input") \
-    X(XT_ERR_INVALID,      "Invalid input") \
-    X(XT_ERR_OUT_OF_RANGE, "Out of range")
+    X(XT_OK,             "OK") \
+    X(XT_EOF,            "End of input") \
+    X(XT_INVALID_INPUT,  "Invalid input") \
+    X(XT_OUT_OF_RANGE,   "Out of range") \
+    X(XT_INTERNAL_ERROR, "Internal error")
 
 typedef enum {
     #define X(code, msg) code,
@@ -32,8 +33,8 @@ typedef enum {
 // FUNCTION DECLARATIONS
 // ---------------------
 
-#include <stddef.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 const char * xt_status_str(xt_status_t status);
 
@@ -53,11 +54,13 @@ void xt_clear_input(bool newline_found);
 bool xt_fget_token(FILE * fp, char * str, size_t len, xt_status_t * status);
 bool xt_get_token(char * str, const size_t len, xt_status_t * status);
 
+char * xt_fget_line(FILE * fp, xt_status_t * status);
+
+#ifdef XTOOLS_IMPLEMENTATION
+
 // --------------------
 // COMMON FUNCTIONALITY
 // --------------------
-
-#ifdef XTOOLS_IMPLEMENTATION
 
 #define signed_t   int64_t
 #define unsigned_t uint64_t
@@ -73,6 +76,11 @@ bool xt_get_token(char * str, const size_t len, xt_status_t * status);
     do { \
         if (status && *status != XT_OK) return 0; \
     } while (0)
+
+#define SET_STATUS(status, code) \
+	do { \
+		if (status && *status == XT_OK) {*status = code;} \
+	} while (0)
 
 const char * xt_status_str(xt_status_t status) {
     switch (status) {
@@ -119,7 +127,7 @@ const char * xt_status_str(xt_status_t status) {
             str_ptr += 1;\
         }\
         if (span_start == NULL) {\
-            code = XT_ERR_INVALID;\
+            code = XT_INVALID_INPUT;\
             goto END;\
         }\
 \
@@ -127,11 +135,11 @@ const char * xt_status_str(xt_status_t status) {
         errno = 0;\
         const variant##_t value = parse_##variant(span_start, &parse_end);\
         if (parse_end <= span_end) {\
-            code = XT_ERR_INVALID;\
+            code = XT_INVALID_INPUT;\
             goto END;\
         }\
         if (errno == ERANGE || RANGE_CHECK_CONDITION(variant, value, min, max) ) {\
-            code = XT_ERR_OUT_OF_RANGE;\
+            code = XT_OUT_OF_RANGE;\
             goto END;\
         }\
 \
@@ -153,7 +161,6 @@ TYPES_LIST
 #include <ctype.h>
 #include <stdbool.h>
 
-
 void xt_clear_input(bool newline_found) {
     if (newline_found) {return;}
     int c;
@@ -169,7 +176,7 @@ bool xt_fget_token(FILE * fp, char * str, const size_t len, xt_status_t * status
     END_IF_STATUS_ERROR;
 
     xt_status_t code = XT_OK;
-    bool xt_newline_found = false;
+    bool newline_found = false;
 
     size_t tkn_len = 0;
     bool in_tkn = false;
@@ -184,7 +191,7 @@ bool xt_fget_token(FILE * fp, char * str, const size_t len, xt_status_t * status
             break;
         }
         if (c == '\n') {
-            xt_newline_found = true;
+            newline_found = true;
             break;
         }
 
@@ -195,10 +202,12 @@ bool xt_fget_token(FILE * fp, char * str, const size_t len, xt_status_t * status
         got_token = true;
 
         in_tkn = true;
-        str[tkn_len++] = (char) c;
-        if (tkn_len >= len) {
-            code = XT_ERR_OUT_OF_RANGE;
-            goto END;
+
+        if (tkn_len < len - 1) {
+        	str[tkn_len++] = (char) c;
+        }
+        else {
+        	code = XT_OUT_OF_RANGE;
         }
     }
 
@@ -209,7 +218,7 @@ bool xt_fget_token(FILE * fp, char * str, const size_t len, xt_status_t * status
     if (status && *status == XT_OK) {
         *status = code;
     }
-    return xt_newline_found;
+    return newline_found;
 }
 
 bool xt_get_token(char * str, const size_t len, xt_status_t * status) {
@@ -231,7 +240,7 @@ bool xt_get_token(char * str, const size_t len, xt_status_t * status) {
         } \
         if (buffer[0] == '\0') {\
             if (err == XT_EOF) {goto END;} \
-            err = XT_ERR_INVALID;\
+            err = XT_INVALID_INPUT;\
             goto END;\
         }\
 \
@@ -250,6 +259,43 @@ bool xt_get_token(char * str, const size_t len, xt_status_t * status) {
     }
 TYPES_LIST
 #undef X
+
+char * xt_fget_line(FILE * fp, xt_status_t * status) {
+	size_t line_cap = 16;
+	size_t line_len = 0;
+	char * line = malloc(line_cap);
+	if (line == NULL) {goto ERR_ALLOC;}
+
+	while (1) {
+		const char c = fgetc(fp);
+		if (c == EOF && line_len == 0) {goto EOF_NO_CHAR;}
+		if (c == '\n' || c == EOF) {break;}
+
+		if (line_len == line_cap - 1) {
+			const size_t new_cap = line_cap * 2;
+			char * tmp_line = realloc(line, new_cap);
+			if (tmp_line == NULL) {goto ERR_REALLOC;}
+			line = tmp_line;
+			line_cap = new_cap;
+		}
+
+		line[line_len++] = c;
+	}
+
+	line[line_len] = '\0';
+	return line;
+
+	ERR_REALLOC:
+	free(line);
+	ERR_ALLOC:
+	SET_STATUS(status, XT_INTERNAL_ERROR);
+	return NULL;
+
+	EOF_NO_CHAR:
+	free(line);
+	SET_STATUS(status, XT_EOF);
+	return NULL;
+}
 
 // ----------------
 // UNDEF ALL MACROS
@@ -270,6 +316,8 @@ TYPES_LIST
 #undef RANGE_CHECK_CONDITION_unsigned
 #undef RANGE_CHECK_CONDITION_floating
 #undef RANGE_CHECK_CONDITION
+
+#undef SET_STATUS
 
 #endif // XTOOLS_IMPLEMENTATION
 
