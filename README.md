@@ -2,7 +2,8 @@
 
 Single-header library with simple tools to improve your stay in C programming language.
 
-> [!WARNING] Current implementation requires heavy testing. For now, use at your own risk!
+> [!WARNING] 
+> Current implementation requires heavy testing. For now, use at your own risk!
 
 ## Functionality
 
