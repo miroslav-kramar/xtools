@@ -1,6 +1,6 @@
 #include <stdio.h>
 #define XTOOLS_IMPLEMENTATION
-#include "xtools.h"
+#include "../xtools.h"
 
 int main() {
     while (1) {

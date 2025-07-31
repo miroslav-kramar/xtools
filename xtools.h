@@ -204,32 +204,29 @@ bool xt_get_token(char * str, const size_t len, xt_status_t * status) {
 
 #define X(name, variant, type, min, max) \
     type xt_fscan_##name (FILE * fp, bool * newline_found, xt_status_t * status) { \
-        END_IF_STATUS_NOT_OK; \
+        if (status && *status != XT_OK) {return 0;} \
 \
-        xt_status_t err = XT_OK; \
-        type out = 0; \
+        xt_status_t code = XT_OK; \
 \
         char buffer[512] = {0}; \
-        const bool _newline_found = xt_fget_token(fp, buffer, sizeof(buffer), &err); \
-        if (newline_found) {*newline_found = _newline_found;} \
-        if (err && err != XT_EOF) { \
-            goto END; \
-        } \
-        if (buffer[0] == '\0') {\
-            if (err == XT_EOF) {goto END;} \
-            err = XT_INVALID_INPUT;\
-            goto END;\
-        }\
+        const bool _newline_found = xt_fget_token(fp, buffer, sizeof(buffer), &code); \
+        if (newline_found) {*newline_found = _newline_found;}\
+        if (code != XT_OK) {goto TOKENIZATION_ERROR;}\
+        if (buffer[0] == '\0') {goto INVALID_TOKEN;}\
 \
-        const variant##_t value = xt_parse_##name(buffer, &err);\
-        if (err) {\
-            goto END;\
-        }\
-        out = value;\
+        const type value = xt_parse_##name(buffer, &code);\
+        if (code != XT_OK) {goto PARSING_ERROR;}\
 \
-        END:\
-        if (status && *status == XT_OK) {*status = err;}\
-        return out;\
+        return value;\
+\
+        TOKENIZATION_ERROR: \
+        PARSING_ERROR: \
+        SET_STATUS(status, code); \
+        return 0; \
+\
+        INVALID_TOKEN: \
+        SET_STATUS(status, XT_INVALID_INPUT);\
+        return 0;\
     } \
 \
     type xt_scan_##name (bool * newline_found, xt_status_t * status) { \
