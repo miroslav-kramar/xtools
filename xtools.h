@@ -103,50 +103,44 @@ const char * xt_status_str(xt_status_t status) {
 #define parse_unsigned(str, endptr) strtoull(str, endptr, 10)
 #define parse_floating(str, endptr) strtold(str, endptr)
 
-#define RANGE_CHECK_CONDITION_signed(value, min, max) ((value) < (min) || (value) > (max))
-#define RANGE_CHECK_CONDITION_unsigned(value, min, max) ((value) > (max))
-#define RANGE_CHECK_CONDITION_floating(value, min, max) RANGE_CHECK_CONDITION_signed(value, min, max)
+#define CHECK_BAD_RANGE_signed(value, min, max) ((value) < (min) || (value) > (max))
+#define CHECK_BAD_RANGE_unsigned(value, min, max) ((value) > (max))
+#define CHECK_BAD_RANGE_floating(value, min, max) CHECK_BAD_RANGE_signed(value, min, max)
 
-#define RANGE_CHECK_CONDITION(variant, value, min, max) RANGE_CHECK_CONDITION_##variant(value, min, max)
+#define CHECK_BAD_RANGE(variant, value, min, max) CHECK_BAD_RANGE_##variant(value, min, max)
 
 #define X(name, variant, type, min, max) \
     type xt_parse_##name (const char * str, xt_status_t * status) {\
-        xt_status_t code = XT_OK;\
-        type out = 0;\
 \
-        const char * str_ptr    = str;\
-        const char * span_start = NULL;\
-        const char * span_end   = NULL;\
+        const char * tkn_start = NULL;\
+        const char * tkn_end   = NULL;\
         \
-        while (*str_ptr != '\0') {\
-            if (!isspace(*str_ptr)) {\
-                if (!span_start) {span_start = str_ptr;}\
-                span_end = str_ptr;\
+        for (size_t i = 0; *(str+i) != '\0'; i++) {\
+            if (!isspace(str[i])) {\
+                if (!tkn_start) {tkn_start = str + i;}\
+                tkn_end = str + i;\
             }\
-            str_ptr += 1;\
         }\
-        if (span_start == NULL) {\
-            code = XT_INVALID_INPUT;\
-            goto END;\
-        }\
+        if (tkn_start == NULL)\
+            {goto INVALID_TOKEN;}\
 \
         char * parse_end;\
         errno = 0;\
-        const variant##_t value = parse_##variant(span_start, &parse_end);\
-        if (parse_end <= span_end) {\
-            code = XT_INVALID_INPUT;\
-            goto END;\
-        }\
-        if (errno == ERANGE || RANGE_CHECK_CONDITION(variant, value, min, max) ) {\
-            code = XT_OUT_OF_RANGE;\
-            goto END;\
-        }\
+        const variant##_t value = parse_##variant(tkn_start, &parse_end);\
+        if (parse_end <= tkn_end)\
+            {goto INVALID_TOKEN;}\
+        if (errno == ERANGE || CHECK_BAD_RANGE(variant, value, min, max)) \
+            {goto OUT_OF_RANGE;}\
 \
-        out = value;\
+        return value;\
 \
-        END:\
-        if (status) *status = code;\
-        return out;\
+        INVALID_TOKEN:\
+        SET_STATUS(status, XT_INVALID_INPUT);\
+        return 0;\
+\
+        OUT_OF_RANGE:\
+        SET_STATUS(status, XT_OUT_OF_RANGE);\
+        return 0;\
     }
 TYPES_LIST
 #undef X
@@ -187,7 +181,7 @@ bool xt_fget_token(FILE * fp, char * str, const size_t len, xt_status_t * status
             break;
         }
 
-        if (tkn_len < len - 1 || (tkn_len < len && len == 1)) {
+        if (tkn_len < len - 1 || (tkn_len == 0 && len == 1)) {
         	str[tkn_len++] = (char) c;
         }
         else {
@@ -237,6 +231,7 @@ bool xt_get_token(char * str, const size_t len, xt_status_t * status) {
         if (status && *status == XT_OK) {*status = err;}\
         return out;\
     } \
+\
     type xt_scan_##name (bool * newline_found, xt_status_t * status) { \
         return xt_fscan_##name (stdin, newline_found, status); \
     }
@@ -295,10 +290,10 @@ char * xt_fget_line(FILE * fp, xt_status_t * status) {
 #undef unsigned_t
 #undef floating_t
 
-#undef RANGE_CHECK_CONDITION_signed
-#undef RANGE_CHECK_CONDITION_unsigned
-#undef RANGE_CHECK_CONDITION_floating
-#undef RANGE_CHECK_CONDITION
+#undef CHECK_BAD_RANGE_signed
+#undef CHECK_BAD_RANGE_unsigned
+#undef CHECK_BAD_RANGE_floating
+#undef CHECK_BAD_RANGE
 
 #undef SET_STATUS
 
