@@ -33,12 +33,8 @@ typedef enum {
 // FUNCTION DECLARATIONS
 // ---------------------
 
+#include <stddef.h>
 #include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <ctype.h>
-#include <float.h>
-#include <errno.h>
 
 const char * xt_status_str(xt_status_t status);
 
@@ -66,6 +62,13 @@ char * xt_fget_line(FILE * fp, xt_status_t * status);
 // COMMON FUNCTIONALITY
 // --------------------
 
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include <float.h>
+#include <errno.h>
+
 #define signed_t   int64_t
 #define unsigned_t uint64_t
 #define floating_t long double
@@ -91,7 +94,7 @@ const char * xt_status_str(xt_status_t status) {
         #define X(code, msg) case code: return msg;
         STATUS_CODES
         #undef X
-        default: return "Unknown error";
+        default: return "Unknown";
     }
 }
 
