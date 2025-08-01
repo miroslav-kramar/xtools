@@ -17,17 +17,17 @@ typedef enum {
 } xt_status_t;
 
 #define TYPES_LIST \
-	X(i64, signed,   int64_t,      INT64_MIN, INT64_MAX)  \
-	X(i32, signed,   int32_t,      INT32_MIN, INT32_MAX)  \
-	X(i16, signed,   int16_t,      INT16_MIN, INT16_MAX)  \
-	X(i8,  signed,   int8_t,       INT8_MIN,  INT8_MAX)   \
-	X(u64, unsigned, uint64_t,     0,         UINT64_MAX) \
-	X(u32, unsigned, uint32_t,     0,         UINT32_MAX) \
-	X(u16, unsigned, uint16_t,     0,         UINT16_MAX) \
-	X(u8,  unsigned, uint8_t,      0,         UINT8_MAX)  \
-	X(ld,  floating, long double, -LDBL_MAX,  LDBL_MAX)   \
-	X(d,   floating, double,      -DBL_MAX,   DBL_MAX)    \
-	X(f,   floating, float,       -FLT_MAX,   FLT_MAX)
+	X(i64,   signed,   int64_t,      INT64_MIN, INT64_MAX)  \
+	X(i32,   signed,   int32_t,      INT32_MIN, INT32_MAX)  \
+	X(i16,   signed,   int16_t,      INT16_MIN, INT16_MAX)  \
+	X(i8,    signed,   int8_t,       INT8_MIN,  INT8_MAX)   \
+	X(u64,   unsigned, uint64_t,     0,         UINT64_MAX) \
+	X(u32,   unsigned, uint32_t,     0,         UINT32_MAX) \
+	X(u16,   unsigned, uint16_t,     0,         UINT16_MAX) \
+	X(u8,    unsigned, uint8_t,      0,         UINT8_MAX)  \
+	X(ldbl,  floating, long double, -LDBL_MAX,  LDBL_MAX)   \
+	X(dbl,   floating, double,      -DBL_MAX,   DBL_MAX)    \
+	X(flt,   floating, float,       -FLT_MAX,   FLT_MAX)
 
 // ---------------------
 // FUNCTION DECLARATIONS
