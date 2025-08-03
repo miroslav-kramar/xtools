@@ -2,6 +2,8 @@
 #define XTOOLS_H
 
 #include <stdint.h>
+#include <stdio.h>
+#include <stdbool.h>
 
 #define STATUS_CODES \
     X(XT_OK,             "OK") \
@@ -29,32 +31,37 @@ typedef enum {
 	X(dbl,   floating, double,      -DBL_MAX,   DBL_MAX)    \
 	X(flt,   floating, float,       -FLT_MAX,   FLT_MAX)
 
+typedef struct {
+    FILE * stream;
+	const char * delim;
+	xt_status_t status;
+	bool newline_found;
+} xt_scanner_t;
+
+xt_scanner_t xt_set_scanner(FILE * stream, const char * delim);
+
 // ---------------------
 // FUNCTION DECLARATIONS
 // ---------------------
 
-#include <stddef.h>
-#include <stdbool.h>
-
-const char * xt_status_str(xt_status_t status);
-
 // parsing
-#define X(name, variant, type, min, max) type xt_parse_##name (const char * str, xt_status_t * status);
+#define X(name, variant, type, min, max) \
+    type xt_parse_##name (const char * str, xt_status_t * status);
 TYPES_LIST
 #undef X
 
 // scanning
+const char * xt_status_str(xt_status_t status);
+
 #define X(name, variant, type, min, max) \
-    type xt_fscan_##name(FILE * fp, bool * newline_found, xt_status_t * status); \
-    type xt_scan_##name(bool * newline_found, xt_status_t * status);
+    type xt_scan_##name(xt_scanner_t * sc);
 TYPES_LIST
 #undef X
 
-void xt_clear_input(bool newline_found);
-bool xt_fget_token(FILE * fp, char * str, size_t len, xt_status_t * status);
-bool xt_get_token(char * str, const size_t len, xt_status_t * status);
+void xt_clear_input(xt_scanner_t * sc);
+size_t xt_get_token(xt_scanner_t * sc, char * buffer, size_t len);
 
-char * xt_fget_line(FILE * fp, xt_status_t * status);
+char * xt_get_line(xt_scanner_t * sc);
 
 #ifdef XTOOLS_IMPLEMENTATION
 
@@ -66,6 +73,7 @@ char * xt_fget_line(FILE * fp, xt_status_t * status);
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <string.h>
 #include <float.h>
 #include <errno.h>
 
@@ -77,11 +85,6 @@ char * xt_fget_line(FILE * fp, xt_status_t * status);
     do { \
         fprintf(stderr, "[ERROR] Function \"%s\": " msg "\n", __func__); \
         exit(EXIT_FAILURE); \
-    } while (0)
-
-#define END_IF_STATUS_NOT_OK \
-    do { \
-        if (status && *status != XT_OK) return 0; \
     } while (0)
 
 #define SET_STATUS(status, code) \
@@ -152,100 +155,100 @@ TYPES_LIST
 // SCANNING FUNCTIONALITY
 // ----------------------
 
-void xt_clear_input(bool newline_found) {
-    if (newline_found) {return;}
-    int c;
-    do {
-        c = getchar();
-    } while (c != '\n' && c != EOF);
+xt_scanner_t xt_set_scanner(FILE * stream, const char * delim) {
+    const char * const DEFAULT_DELIM = " \t";
+    xt_scanner_t out;
+    out.stream = stream;
+    out.status = XT_OK;
+    out.newline_found = false;
+    if (delim == NULL) {out.delim = DEFAULT_DELIM;}
+    else {out.delim = delim;}
+    return out;
 }
 
-bool xt_fget_token(FILE * fp, char * str, const size_t len, xt_status_t * status) {
-    if (fp  == NULL)   {FAIL("fp can not be NULL!");}
-    if (str == NULL)   {FAIL("str can not be NULL!");}
-    if (len == 0)      {FAIL("len can not be 0!");}
-    END_IF_STATUS_NOT_OK;
+void xt_clear_input(xt_scanner_t * sc) {
+    if (sc->newline_found) {return;}
+    int c;
+    do {
+        c = fgetc(sc->stream);
+        if (c == EOF) {goto EOF_FOUND;}
+    } while (c != '\n');
+    sc->newline_found = true;
+    return;
 
-    bool newline_found = false;
+    EOF_FOUND:
+    sc->status = XT_EOF;
+}
+
+size_t xt_get_token(xt_scanner_t * sc, char * buffer, const size_t len) {
+    if (sc->status != XT_OK) {return 0;}
+
+    if (sc->newline_found) {sc->newline_found = false;}
 
     size_t tkn_len = 0;
     while (1) {
-        const int c = fgetc(fp);
+        const int c = fgetc(sc->stream);
         if (c == EOF) {
             if (tkn_len == 0) {goto EOF_NO_CHAR;}
             break;
         }
         if (c == '\n') {
-            newline_found = true;
+            sc->newline_found = true;
             break;
         }
-        if (isspace(c)) {
+        if (strchr(sc->delim, c) != NULL) {
             if (tkn_len == 0) {continue;}
             break;
         }
 
         if (tkn_len < len - 1 || (tkn_len == 0 && len == 1)) {
-        	str[tkn_len++] = (char) c;
+        	buffer[tkn_len++] = (char) c;
         }
         else {
-            SET_STATUS(status, XT_OUT_OF_RANGE);
+            sc->status = XT_OUT_OF_RANGE;
         }
     }
 
     // If not single char
-    if (len != 1) {str[tkn_len] = '\0';}
-    return newline_found;
+    if (len != 1) {buffer[tkn_len] = '\0';}
+    return tkn_len;
 
     EOF_NO_CHAR:
-    SET_STATUS(status, XT_EOF);
-    return false;
-}
-
-bool xt_get_token(char * str, const size_t len, xt_status_t * status) {
-    return xt_fget_token(stdin, str, len, status);
+    sc->status = XT_EOF;
+    return 0;
 }
 
 #define X(name, variant, type, min, max) \
-    type xt_fscan_##name (FILE * fp, bool * newline_found, xt_status_t * status) { \
-        if (status && *status != XT_OK) {return 0;} \
-\
-        xt_status_t code = XT_OK; \
+    type xt_scan_##name (xt_scanner_t * sc) { \
+        if (sc->status != XT_OK) {return (type)0;} \
 \
         char buffer[512] = {0}; \
-        const bool _newline_found = xt_fget_token(fp, buffer, sizeof(buffer), &code); \
-        if (newline_found) {*newline_found = _newline_found;}\
-        if (code != XT_OK) {goto TOKENIZATION_ERROR;}\
-        if (buffer[0] == '\0') {goto INVALID_TOKEN;}\
+        const size_t tkn_len = xt_get_token(sc, buffer, sizeof(buffer)); \
+        if (sc->status != XT_OK) {goto TOKENIZATION_ERROR;}\
+        if (tkn_len == 0) {goto INVALID_TOKEN;}\
 \
-        const type value = xt_parse_##name(buffer, &code);\
-        if (code != XT_OK) {goto PARSING_ERROR;}\
+        const type value = xt_parse_##name(buffer, &sc->status);\
+        if (sc->status != XT_OK) {goto PARSING_ERROR;}\
 \
         return value;\
 \
-        TOKENIZATION_ERROR: \
-        PARSING_ERROR: \
-        SET_STATUS(status, code); \
-        return 0; \
-\
         INVALID_TOKEN: \
-        SET_STATUS(status, XT_INVALID_INPUT);\
+        sc->status = XT_INVALID_INPUT;\
+        PARSING_ERROR: \
+        TOKENIZATION_ERROR: \
         return 0;\
-    } \
-\
-    type xt_scan_##name (bool * newline_found, xt_status_t * status) { \
-        return xt_fscan_##name (stdin, newline_found, status); \
     }
 TYPES_LIST
 #undef X
 
-char * xt_fget_line(FILE * fp, xt_status_t * status) {
+char * xt_get_line(xt_scanner_t * sc) {
 	size_t line_cap = 16;
 	size_t line_len = 0;
 	char * line = malloc(line_cap);
 	if (line == NULL) {goto ERR_ALLOC;}
 
 	while (1) {
-		const char c = fgetc(fp);
+		const char c = fgetc(sc->stream);
 		if (c == EOF && line_len == 0) {goto EOF_NO_CHAR;}
 		if (c == '\n' || c == EOF) {break;}
 
@@ -266,12 +269,12 @@ char * xt_fget_line(FILE * fp, xt_status_t * status) {
 	ERR_REALLOC:
 	free(line);
 	ERR_ALLOC:
-	SET_STATUS(status, XT_INTERNAL_ERROR);
+	sc->status = XT_INTERNAL_ERROR;
 	return NULL;
 
 	EOF_NO_CHAR:
 	free(line);
-	SET_STATUS(status, XT_EOF);
+	sc->status =XT_EOF;
 	return NULL;
 }
 
@@ -280,7 +283,6 @@ char * xt_fget_line(FILE * fp, xt_status_t * status) {
 // ----------------
 
 #undef FAIL
-#undef END_IF_STATUS_NOT_OK
 
 #undef parse_signed
 #undef parse_unsigned
